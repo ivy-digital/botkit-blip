@@ -1,0 +1,17 @@
+{
+  "name": "botkit-blip",
+  "version": "1.0.0",
+  "description": "Botkit Platform Connector for BliP Chatbot",
+  "main": "./test/BotTest.js",
+  "scripts": {
+    "start": "node BotTest.js"
+  },
+  "author": "Juliocr",
+  "license": "ISC",
+  "dependencies": {
+    "blip-sdk": "^3.5.3",
+    "botkit": "^0.6.14",
+    "express": "^4.16.3",
+    "lime-transport-websocket": "^2.0.2"
+  }
+}
