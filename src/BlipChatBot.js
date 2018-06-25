@@ -1,17 +1,14 @@
 var BlipSdk = require('blip-sdk');
+let Lime = require('lime-js');
 var WebSocketTransport = require('lime-transport-websocket')
-
 module.exports = function (Botkit, config) {
 
     var controller = Botkit.core(config);
 
 
-
-
     controller.defineBot(function (botkit, config) {
 
         var bot = {
-            type: 'Blip',
             botkit: botkit,
             config: config || {},
             utterances: botkit.utterances,
@@ -26,60 +23,99 @@ module.exports = function (Botkit, config) {
             .build();
 
 
-
+        client.connect();
         // connect to the MessagingHub server
-        client.connect()
-            .then(() => {
-                console.log('Listening...')
 
 
-                bot.send = function (message, cb) {
-                    client.sendMessage(message);
+
+        bot.send = async function (message, cb) {
+
+            function done(err, res) {
+                if (cb) {
+                    cb(err);
                 }
+            }
 
-                // this function takes an incoming message (from a user) and an outgoing message (reply from bot)
-                // and ensures that the reply has the appropriate fields to appear as a reply
-                bot.reply = function (src, resp, cb) {
-                    if (typeof (resp) == 'string') {
-                        resp = {
-                            text: resp
-                        }
-                    }
-                    resp.channel = src.channel;
-                    bot.say(message, cb);
+            if (!message || !message.to) {
+                if (cb) {
+                    cb(new Error('Outgoing message requires a valid address...'));
                 }
+                return;
+            }
 
 
-            })
-            .catch((err) => console.error(err));
+            // Copy message minus user & channel fields
+            var bf_message = {};
+            for (var key in message) {
+                switch (key) {
+                    case 'user':
+                    case 'channel':
+                        // ignore
+                        break;
+                    default:
+                        bf_message[key] = message[key];
+                        break;
+                }
+            }
+            if (!bf_message.type) {
+                bf_message.type = 'message';
+            }
 
 
 
+            // Send message through connector
+            client.sendMessage([bf_message])
+            done();
 
-        // this function defines the mechanism by which botkit looks for ongoing conversations
-        // probably leave as is!
+        }
+
+        // this function takes an incoming message (from a user) and an outgoing message (reply from bot)
+        // and ensures that the reply has the appropriate fields to appear as a reply
+        bot.reply = async function (src, resp, cb) {
+
+            let header = {
+                id: Lime.Guid(),
+                to: src.from
+            }
+
+            let msg = Object.assign(header, resp);
+
+            if (!msg.content) {
+                msg.content = msg.text;
+            }
+
+            if (!msg.type) {
+                msg.type = 'text/plain'
+            }
+
+            bot.say(msg, cb);
+        }
+
+
         bot.findConversation = function (message, cb) {
+            botkit.debug('CUSTOM FIND CONVO', message.user, message.channel);
             for (var t = 0; t < botkit.tasks.length; t++) {
                 for (var c = 0; c < botkit.tasks[t].convos.length; c++) {
                     if (
                         botkit.tasks[t].convos[c].isActive() &&
                         botkit.tasks[t].convos[c].source_message.user == message.user &&
+                        botkit.tasks[t].convos[c].source_message.channel == message.channel &&
                         botkit.excludedEvents.indexOf(message.type) == -1 // this type of message should not be included
                     ) {
+                        botkit.debug('FOUND EXISTING CONVO!');
                         cb(botkit.tasks[t].convos[c]);
                         return;
                     }
                 }
             }
+
             cb();
         };
-
-
-
         bot.connect = client;
         return bot;
-
     })
+
+
 
 
     // provide one or more normalize middleware functions that take a raw incoming message
@@ -87,10 +123,18 @@ module.exports = function (Botkit, config) {
     controller.middleware.normalize.use(function (bot, message, next) {
 
         console.log('NORMALIZE', message);
+
+        var canal = message.from.split("@");
+
+        message.user = message.from.split('/')[0];
+        message.channel = canal[1];
+        message.text = message.content;
+
+        if (message.type == 'text/plain') {
+            message.type = 'message_received';
+        }
         next();
-
     });
-
 
     // provide one or more ways to format outgoing messages from botkit messages into 
     // the necessary format required by the platform API
@@ -102,23 +146,44 @@ module.exports = function (Botkit, config) {
         next();
     });
 
-
     // provide a way to receive messages - normally by handling an incoming webhook as below!
-    controller.handleWebhookPayload = function (webserver, bot, cb) {
+    controller.createWebhookEndpoints = (bot, cb) => {
 
 
-        bot.connect.addMessageReceiver(() => true, (m) => {
-            controller.ingest(bot, m, null);
-
+        bot.connect.addMessageReceiver(() => true, (message) => {
+            controller.ingest(bot, message, null);
         })
 
+        if (cb) {
+            cb();
+        }
 
-        controller.startTicking();
-
-
-
-        return bot;
+        return controller;
     };
+
+    sleep = (ms) =>{
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+
+    controller.sendTyping = async (bot, message, time) => {
+
+        bot.reply(message, {
+            type: "application/vnd.lime.chatstate+json",
+            content: {
+                "state": "composing"
+            }
+        })
+
+        await sleep(time);
+
+        bot.reply(message, {
+            type: "application/vnd.lime.chatstate+json",
+            content: {
+                "state": "starting"
+            }
+        })
+    }
 
 
     return controller;
