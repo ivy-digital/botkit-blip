@@ -2,9 +2,9 @@
   "name": "botkit-blip",
   "version": "1.0.0",
   "description": "Botkit Platform Connector for BliP Chatbot",
-  "main": "./test/BotTest.js",
+  "main": "./src/BlipChatBot.js",
   "scripts": {
-    "start": "node BotTest.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Juliocr",
   "license": "ISC",
